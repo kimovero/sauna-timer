@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <!-- viewport-fit=cover lets content reach behind the notch / home bar -->
+  <meta name="viewport" content="viewport-fit=cover, width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>Sauna Timer</title>
+
+  <!-- ── PWA / iOS ────────────────────────────────────── -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Sauna">
+  <meta name="theme-color" content="#080300">
+  <link rel="apple-touch-icon" id="ati" href="icon.svg">
+  <link rel="manifest" href="manifest.json">
+
+  <style>
+    :root {
+      --bg:    #080300;
+      --ember: #ff6b1a;
+      --gold:  #ffc84a;
+    }
+
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    html, body { width: 100%; height: 100%; overflow: hidden; touch-action: manipulation; }
+
+    body {
+      background: var(--bg);
+      background-image:
+        radial-gradient(ellipse 90% 55% at 50% -5%,  #3a1500 0%, transparent 65%),
+        radial-gradient(ellipse 90% 55% at 50% 105%, #1f0a00 0%, transparent 65%);
+      color: var(--gold);
+      font-family: Georgia, 'Times New Roman', serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: space-between;
+      /* Respect iPhone notch (top) and home-bar (bottom) */
+      padding-top:    max(env(safe-area-inset-top,    16px), 4vh);
+      padding-right:  max(env(safe-area-inset-right,  5vw),  5vw);
+      padding-bottom: max(env(safe-area-inset-bottom, 16px), 4vh);
+      padding-left:   max(env(safe-area-inset-left,   5vw),  5vw);
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    /* ── title ──────────────────────── */
+    .title {
+      font-size: clamp(0.85rem, 3vw, 1.6rem);
+      letter-spacing: 0.45em;
+      text-transform: uppercase;
+      color: rgba(255,200,74,0.55);
+      text-shadow: 0 0 18px rgba(255,107,26,0.45);
+    }
+
+    /* ── hourglass ───────────────────── */
+    #hg {
+      width: clamp(72px, 20vw, 140px);
+      height: auto;
+      display: block;
+      filter: drop-shadow(0 0 10px rgba(255,107,26,0.35));
+    }
+
+    #drip { animation: drip 0.9s linear infinite; opacity: 0; }
+    @keyframes drip {
+      0%   { transform: translateY(0);    opacity: 0.9; }
+      80%  { transform: translateY(8px);  opacity: 0.6; }
+      100% { transform: translateY(10px); opacity: 0;   }
+    }
+
+    /* ── big timer ───────────────────── */
+    .timer {
+      font-size: clamp(5.5rem, 27vw, 16rem);
+      font-weight: bold;
+      letter-spacing: 0.02em;
+      font-variant-numeric: tabular-nums;
+      line-height: 1;
+      text-align: center;
+      text-shadow:
+        0 0 18px  rgba(255,107,26,0.95),
+        0 0 45px  rgba(255,107,26,0.45),
+        0 0 100px rgba(255,107,26,0.15);
+      transition: color 0.4s;
+    }
+    .timer.ending { color: #ff4000; animation: blink 0.85s ease-in-out infinite; }
+    .timer.done   { color: var(--ember); }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.6} }
+
+    /* ── progress dots ───────────────── */
+    .markers { display: flex; align-items: center; gap: clamp(8px,2vw,18px); }
+    .mlabel  { font-size: clamp(0.65rem,1.8vw,0.95rem); opacity:0.4; letter-spacing:0.05em; }
+    .dot {
+      width:  clamp(10px,2.5vw,18px);
+      height: clamp(10px,2.5vw,18px);
+      border-radius: 50%;
+      background: rgba(255,200,74,0.1);
+      border: 2px solid rgba(255,200,74,0.25);
+      transition: background 0.5s, border-color 0.5s, box-shadow 0.5s;
+    }
+    .dot.lit {
+      background: var(--ember);
+      border-color: var(--ember);
+      box-shadow: 0 0 10px var(--ember), 0 0 22px rgba(255,107,26,0.45);
+    }
+
+    /* ── status ─────────────────────── */
+    .status {
+      font-size: clamp(0.75rem,2.2vw,1rem);
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: rgba(255,200,74,0.45);
+      min-height: 1.4em;
+      text-align: center;
+    }
+
+    /* ── buttons ─────────────────────── */
+    .controls { display: flex; gap: clamp(12px,3vw,28px); }
+    .btn {
+      background: rgba(255,107,26,0.1);
+      border: 2px solid rgba(255,107,26,0.38);
+      color: var(--gold);
+      padding: clamp(10px,2.2vw,16px) clamp(26px,6.5vw,58px);
+      font-size: clamp(0.88rem,2.4vw,1.2rem);
+      border-radius: 60px;
+      cursor: pointer;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      font-family: inherit;
+      -webkit-tap-highlight-color: transparent;
+      transition: background 0.2s, border-color 0.2s, transform 0.1s;
+    }
+    .btn:hover  { background: rgba(255,107,26,0.24); border-color: rgba(255,107,26,0.65); }
+    .btn:active { transform: scale(0.95); }
+
+    /* ── wake-lock tip ───────────────── */
+    .wl-tip {
+      display: none;
+      font-size: clamp(0.58rem,1.4vw,0.72rem);
+      opacity: 0.32;
+      text-align: center;
+      max-width: 290px;
+      line-height: 1.55;
+      letter-spacing: 0.04em;
+    }
+
+    /* ── ripple ──────────────────────── */
+    #ripple { position:fixed; inset:0; pointer-events:none; display:flex; align-items:center; justify-content:center; }
+    .rring  { position:absolute; border-radius:50%; border:3px solid var(--ember); width:60px; height:60px; opacity:0; }
+    @keyframes rout { 0%{width:60px;height:60px;opacity:0.85} 100%{width:700px;height:700px;opacity:0} }
+    .rring.go { animation: rout 1.1s ease-out forwards; }
+  </style>
+</head>
+<body>
+
+  <div class="title">Sauna Timer</div>
+
+  <svg id="hg" viewBox="0 0 100 172" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <linearGradient id="wg" x1="0" y1="0" x2="1" y2="0">
+        <stop offset="0%"   stop-color="#4a2000"/>
+        <stop offset="38%"  stop-color="#c86018"/>
+        <stop offset="62%"  stop-color="#c86018"/>
+        <stop offset="100%" stop-color="#4a2000"/>
+      </linearGradient>
+      <linearGradient id="stg" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%"   stop-color="#dea040"/>
+        <stop offset="100%" stop-color="#9a5010"/>
+      </linearGradient>
+      <linearGradient id="sbg" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%"   stop-color="#9a5010"/>
+        <stop offset="100%" stop-color="#dea040"/>
+      </linearGradient>
+      <clipPath id="ct"><polygon points="8,10 92,10 52,86 48,86"/></clipPath>
+      <clipPath id="cb"><polygon points="48,86 52,86 92,162 8,162"/></clipPath>
+    </defs>
+    <rect id="st" x="8" y="10" width="84" height="76" fill="url(#stg)" clip-path="url(#ct)"/>
+    <rect id="sb" x="8" y="162" width="84" height="0"  fill="url(#sbg)" clip-path="url(#cb)"/>
+    <rect id="drip" x="48.5" y="84" width="3" height="6" rx="1" fill="#cc7020"/>
+    <polygon points="8,10 92,10 52,86 48,86 92,162 8,162 48,86 52,86"
+             fill="none" stroke="url(#wg)" stroke-width="5"
+             stroke-linejoin="round" stroke-linecap="round"/>
+    <rect x="2" y="4"   width="96" height="10" rx="4" fill="url(#wg)"/>
+    <rect x="2" y="158" width="96" height="10" rx="4" fill="url(#wg)"/>
+  </svg>
+
+  <div class="timer" id="timer">15:00</div>
+
+  <div class="markers">
+    <span class="mlabel">5</span>
+    <div class="dot" id="d1"></div>
+    <span class="mlabel">10</span>
+    <div class="dot" id="d2"></div>
+    <span class="mlabel">15 min</span>
+    <div class="dot" id="d3"></div>
+  </div>
+
+  <div class="status" id="status">Ready</div>
+
+  <div class="controls">
+    <button class="btn" id="startBtn" onclick="toggle()">Start</button>
+    <button class="btn" onclick="doReset()">Reset</button>
+  </div>
+
+  <!-- Only shown if Wake Lock API is unavailable (older iPhones) -->
+  <p class="wl-tip" id="wl-tip">
+    To keep screen on:<br>
+    Settings → Display &amp; Brightness → Auto-Lock → Never
+  </p>
+
+  <div id="ripple"></div>
+
+<script>
+/* ══════════════════════════════════════════════
+   PWA: register service worker
+══════════════════════════════════════════════ */
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () =>
+    navigator.serviceWorker.register('./sw.js').catch(() => {})
+  );
+}
+
+/* ══════════════════════════════════════════════
+   Generate canvas PNG → set as apple-touch-icon
+   (Runs immediately so iOS picks it up on "Add to Home Screen")
+══════════════════════════════════════════════ */
+(function buildIcon() {
+  try {
+    const sz = 180;
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = sz;
+    const g  = cv.getContext('2d');
+    const s  = sz;
+
+    // ── background (dark rounded square) ──
+    const rad = s * 0.22;
+    g.beginPath();
+    g.moveTo(rad, 0); g.lineTo(s - rad, 0);
+    g.arcTo(s, 0,   s,   rad,   rad);
+    g.lineTo(s, s - rad);
+    g.arcTo(s, s,   s - rad, s, rad);
+    g.lineTo(rad, s);
+    g.arcTo(0, s,   0,   s - rad, rad);
+    g.lineTo(0, rad);
+    g.arcTo(0, 0,   rad, 0,      rad);
+    g.closePath();
+    g.fillStyle = '#130600';
+    g.fill();
+
+    // ── hourglass geometry ──
+    const L  = s * 0.16,  R  = s * 0.84;
+    const T  = s * 0.13,  B  = s * 0.87;
+    const MY = s * 0.5;
+    const ML = s * 0.44,  MR = s * 0.56;
+    const CH = s * 0.05;   // cap half-height
+    const CP = s * 0.04;   // cap padding beyond L/R
+
+    // ── top sand (full) ──
+    const sg1 = g.createLinearGradient(0, T, 0, MY);
+    sg1.addColorStop(0, '#dea040');
+    sg1.addColorStop(1, '#9a4f10');
+    g.fillStyle = sg1;
+    g.beginPath();
+    g.moveTo(L, T + CH); g.lineTo(R, T + CH);
+    g.lineTo(MR, MY);    g.lineTo(ML, MY);
+    g.closePath(); g.fill();
+
+    // ── bottom sand (~40% full) ──
+    const botH   = (B - CH) - MY;
+    const pct    = 0.38;
+    const sandY  = MY + botH * (1 - pct);
+    const pr     = (sandY - MY) / botH;
+    const sl     = ML + (L - ML) * pr;
+    const sr     = MR + (R - MR) * pr;
+    const sg2 = g.createLinearGradient(0, MY, 0, B);
+    sg2.addColorStop(0, '#7a3d08');
+    sg2.addColorStop(1, '#c86018');
+    g.fillStyle = sg2;
+    g.beginPath();
+    g.moveTo(ML, MY); g.lineTo(MR, MY);
+    g.lineTo(sr, sandY); g.lineTo(sl, sandY);
+    g.closePath(); g.fill();
+
+    // ── wood-grain gradient (horizontal) ──
+    const wg = g.createLinearGradient(L, 0, R, 0);
+    wg.addColorStop(0,   '#5a2800');
+    wg.addColorStop(0.38,'#cc6010');
+    wg.addColorStop(0.62,'#cc6010');
+    wg.addColorStop(1,   '#5a2800');
+
+    // ── frame outline ──
+    g.strokeStyle = wg;
+    g.lineWidth   = s * 0.038;
+    g.lineJoin    = 'round';
+    g.beginPath();
+    g.moveTo(L, T+CH); g.lineTo(R, T+CH);
+    g.lineTo(MR, MY);  g.lineTo(R, B-CH);
+    g.lineTo(L, B-CH); g.lineTo(ML, MY);
+    g.closePath(); g.stroke();
+
+    // ── caps ──
+    g.fillStyle = wg;
+    const cx = L - CP, cw = (R - L) + CP * 2, ch = CH * 2.1;
+    g.fillRect(cx, T - CH, cw, ch);   // top
+    g.fillRect(cx, B - CH, cw, ch);   // bottom
+
+    // ── set as apple-touch-icon ──
+    const link = document.getElementById('ati');
+    if (link) link.href = cv.toDataURL('image/png');
+  } catch (_) { /* non-critical */ }
+})();
+
+/* ══════════════════════════════════════════════
+   Constants
+══════════════════════════════════════════════ */
+const TOTAL  = 15 * 60;
+const ALARMS = [5*60, 10*60, 15*60];
+
+/* ══════════════════════════════════════════════
+   State
+══════════════════════════════════════════════ */
+let remaining = TOTAL;
+let running   = false;
+let tid       = null;
+let wakeLock  = null;
+let fired     = new Set();
+let audioCtx  = null;
+
+/* ══════════════════════════════════════════════
+   Audio  (Web Audio API — no files needed)
+══════════════════════════════════════════════ */
+function ac() {
+  if (!audioCtx)
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return audioCtx;
+}
+
+// Three progressively richer chimes
+const CHIMES = [
+  // 5 min  – single warm bell
+  [{ f:440, t:0,    d:1.1 }],
+  // 10 min – two rising notes
+  [{ f:440, t:0,    d:0.55 }, { f:660, t:0.38, d:0.85 }],
+  // 15 min – three-note ascending fanfare
+  [{ f:392, t:0,    d:0.45 }, { f:523, t:0.30, d:0.45 }, { f:659, t:0.60, d:1.30 }],
+];
+
+function playChime(idx) {
+  const a = ac();
+  if (a.state === 'suspended') a.resume();
+  const now = a.currentTime;
+
+  CHIMES[idx].forEach(({ f, t, d }) => {
+    // fundamental
+    const g = a.createGain();
+    g.gain.setValueAtTime(0.001, now+t);
+    g.gain.linearRampToValueAtTime(0.38, now+t+0.025);
+    g.gain.exponentialRampToValueAtTime(0.001, now+t+d);
+    const o = a.createOscillator();
+    o.type = 'sine'; o.frequency.value = f;
+    o.connect(g); g.connect(a.destination);
+    o.start(now+t); o.stop(now+t+d+0.15);
+
+    // inharmonic overtone → bell colour
+    const g2 = a.createGain();
+    g2.gain.setValueAtTime(0.001, now+t);
+    g2.gain.linearRampToValueAtTime(0.13, now+t+0.015);
+    g2.gain.exponentialRampToValueAtTime(0.001, now+t+d*0.55);
+    const o2 = a.createOscillator();
+    o2.type = 'sine'; o2.frequency.value = f * 2.756;
+    o2.connect(g2); g2.connect(a.destination);
+    o2.start(now+t); o2.stop(now+t+d+0.1);
+
+    // sub-octave for final fanfare warmth
+    if (idx === 2) {
+      const g3 = a.createGain();
+      g3.gain.setValueAtTime(0.001, now+t);
+      g3.gain.linearRampToValueAtTime(0.10, now+t+0.03);
+      g3.gain.exponentialRampToValueAtTime(0.001, now+t+d*0.8);
+      const o3 = a.createOscillator();
+      o3.type = 'sine'; o3.frequency.value = f * 0.5;
+      o3.connect(g3); g3.connect(a.destination);
+      o3.start(now+t); o3.stop(now+t+d+0.1);
+    }
+  });
+}
+
+/* ══════════════════════════════════════════════
+   Screen Wake Lock
+══════════════════════════════════════════════ */
+async function lock() {
+  try {
+    if ('wakeLock' in navigator) {
+      wakeLock = await navigator.wakeLock.request('screen');
+      document.getElementById('wl-tip').style.display = 'none';
+    } else {
+      document.getElementById('wl-tip').style.display = 'block';
+    }
+  } catch {
+    document.getElementById('wl-tip').style.display = 'block';
+  }
+}
+function unlock() { if (wakeLock) { wakeLock.release(); wakeLock = null; } }
+
+// Re-acquire lock when app comes back to foreground (iOS PWA backgrounding)
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && running) lock();
+});
+
+/* ══════════════════════════════════════════════
+   Hourglass sand animation
+══════════════════════════════════════════════ */
+function drawGlass(progress) {
+  // top sand: bottom-anchored at neck (y=86), shrinks upward
+  const th = 76 * (1 - progress);
+  document.getElementById('st').setAttribute('y',      String(86 - th));
+  document.getElementById('st').setAttribute('height', String(th));
+
+  // bottom sand: top surface rises as it fills
+  const bh = 76 * progress;
+  document.getElementById('sb').setAttribute('y',      String(162 - bh));
+  document.getElementById('sb').setAttribute('height', String(bh));
+
+  document.getElementById('drip').style.opacity = (running && progress < 1) ? '0.9' : '0';
+}
+
+/* ══════════════════════════════════════════════
+   Display / render loop
+══════════════════════════════════════════════ */
+function fmt(s) {
+  return `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
+}
+
+function render() {
+  const elapsed  = TOTAL - remaining;
+  const progress = elapsed / TOTAL;
+
+  document.getElementById('timer').textContent = fmt(remaining);
+  drawGlass(progress);
+
+  // progress dots
+  ['d1','d2','d3'].forEach((id, i) =>
+    document.getElementById(id).classList.toggle('lit', elapsed >= ALARMS[i])
+  );
+
+  // alarms
+  ALARMS.forEach((sec, i) => {
+    if (elapsed >= sec && !fired.has(i)) {
+      fired.add(i);
+      playChime(i);
+      spawnRipple();
+      setStatus(['5 minutes', '10 minutes', 'Session complete!'][i]);
+    }
+  });
+
+  // last-minute blink
+  document.getElementById('timer')
+    .classList.toggle('ending', running && remaining <= 60 && remaining > 0);
+
+  if (remaining <= 0) finish();
+}
+
+function setStatus(msg) { document.getElementById('status').textContent = msg; }
+
+function spawnRipple() {
+  const wrap = document.getElementById('ripple');
+  const r    = document.createElement('div');
+  r.className = 'rring';
+  wrap.appendChild(r);
+  void r.offsetWidth;
+  r.classList.add('go');
+  r.addEventListener('animationend', () => r.remove(), { once: true });
+}
+
+/* ══════════════════════════════════════════════
+   Controls
+══════════════════════════════════════════════ */
+function toggle() {
+  const a = ac();
+  if (a.state === 'suspended') a.resume();
+  if (remaining <= 0) return;
+  running ? pause() : start();
+}
+
+function start() {
+  running = true;
+  lock();
+  document.getElementById('startBtn').textContent = 'Pause';
+  setStatus('Running…');
+  tid = setInterval(() => { remaining--; render(); }, 1000);
+  render();
+}
+
+function pause() {
+  running = false;
+  unlock();
+  clearInterval(tid);
+  document.getElementById('startBtn').textContent = 'Resume';
+  setStatus('Paused');
+  document.getElementById('drip').style.opacity = '0';
+}
+
+function finish() {
+  running = false;
+  unlock();
+  clearInterval(tid);
+  remaining = 0;
+  document.getElementById('startBtn').textContent = 'Done';
+  document.getElementById('timer').classList.remove('ending');
+  document.getElementById('timer').classList.add('done');
+}
+
+function doReset() {
+  running = false;
+  unlock();
+  clearInterval(tid);
+  remaining = TOTAL;
+  fired.clear();
+  document.getElementById('startBtn').textContent = 'Start';
+  document.getElementById('timer').textContent = '15:00';
+  document.getElementById('timer').classList.remove('ending', 'done');
+  setStatus('Ready');
+  drawGlass(0);
+  ['d1','d2','d3'].forEach(id => document.getElementById(id).classList.remove('lit'));
+  document.getElementById('wl-tip').style.display = 'none';
+}
+
+/* ── init ── */
+drawGlass(0);
+</script>
+</body>
+</html>
